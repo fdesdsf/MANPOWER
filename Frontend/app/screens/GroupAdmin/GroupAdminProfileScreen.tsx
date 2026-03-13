@@ -180,7 +180,7 @@ function GroupAdminProfileScreen(): React.JSX.Element {
             resizeMode="contain"
           />
           <Text style={[styles.logoText, isDarkMode && styles.darkText]}>
-            JUMUIYA<Text style={styles.logoGreen}>CAPITAL</Text>
+            MAN<Text style={styles.logoGreen}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity 

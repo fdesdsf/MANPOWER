@@ -118,7 +118,7 @@ function ManageGroupsScreen(): React.JSX.Element {
             style={styles.logo}
           />
           <Text style={styles.logoText}>
-            JUMUIYA<Text style={{ color: '#4CAF50' }}>CAPITAL</Text>
+            MAN<Text style={{ color: '#4CAF50' }}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.replace('/(groupadmin)/dashboard')}>

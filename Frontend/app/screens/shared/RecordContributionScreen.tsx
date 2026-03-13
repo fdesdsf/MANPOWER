@@ -197,7 +197,7 @@ export default function RecordContributionScreen(): React.JSX.Element {
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Image source={require('../../../assets/images/logo.png')} style={styles.logo} />
           <Text style={styles.logoText}>
-            JUMUIYA<Text style={{ color: '#4CAF50' }}>CAPITAL</Text>
+            MAN<Text style={{ color: '#4CAF50' }}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.replace('/(groupadmin)/dashboard')}>

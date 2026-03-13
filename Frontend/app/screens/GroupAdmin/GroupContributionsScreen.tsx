@@ -172,8 +172,8 @@ export default function GroupContributionsScreen() {
             style={styles.logo}
           />
           <View style={styles.appTitleContainer}>
-            <Text style={styles.titleBlack}>JUMUIYA</Text>
-            <Text style={styles.titleGreen}>CAPITAL</Text>
+            <Text style={styles.titleBlack}>MAN</Text>
+            <Text style={styles.titleGreen}>POWER</Text>
           </View>
         </View>
 

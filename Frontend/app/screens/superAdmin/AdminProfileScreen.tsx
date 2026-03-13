@@ -422,8 +422,8 @@ export default function AdminProfileScreen() {
             resizeMode="contain"
           />
           <View style={styles.appTitleContainer}>
-            <Text style={[styles.titleBlack, isDarkMode && styles.darkTitleBlack]}>JUMUIYA</Text>
-            <Text style={styles.titleRed}>CAPITAL</Text>
+            <Text style={[styles.titleBlack, isDarkMode && styles.darkTitleBlack]}>MAN</Text>
+            <Text style={styles.titleRed}>POWER</Text>
           </View>
         </View>
         <TouchableOpacity 

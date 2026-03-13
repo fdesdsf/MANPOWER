@@ -44,8 +44,8 @@ const Header: React.FC<HeaderProps> = ({ user, role, onLogout, onMenuToggle, onN
             resizeMode="contain"
           />
           <Text style={styles.appName}>
-            <Text style={styles.man}>JUMUIYA</Text>
-            <Text style={styles.power}>CAPITAL</Text>
+            <Text style={styles.man}>MAN</Text>
+            <Text style={styles.power}>POWER</Text>
           </Text>
         </View>
       </View>

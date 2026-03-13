@@ -545,8 +545,8 @@ export default function MyContributionsScreen() {
             style={styles.logo}
           />
           <Text style={styles.brandText}>
-            <Text style={styles.brandMan}>JUMUIYA</Text>
-            <Text style={styles.brandPower}>CAPITAL</Text>
+            <Text style={styles.brandMan}>MAN</Text>
+            <Text style={styles.brandPower}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.replace('/(member)/dashboard')}>

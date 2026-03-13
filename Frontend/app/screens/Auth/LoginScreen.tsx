@@ -174,7 +174,7 @@ export default function LoginScreen() {
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.title}>JUMUIYACAPITAL</Text>
+        <Text style={styles.title}>MANPOWER</Text>
 
         <TextInput
           style={styles.input}

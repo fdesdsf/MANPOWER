@@ -77,8 +77,8 @@ function CreateGroupScreen(): React.JSX.Element {
             style={styles.logo}
           />
           <View style={styles.titleContainer}>
-            <Text style={styles.titleBlack}>JUMUIYA</Text>
-            <Text style={styles.titleGreen}>CAPITAL</Text>
+            <Text style={styles.titleBlack}>MAN</Text>
+            <Text style={styles.titleGreen}>POWER</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => router.replace('/(groupadmin)/dashboard')}>

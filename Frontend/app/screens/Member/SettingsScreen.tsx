@@ -70,8 +70,8 @@ export default function SettingsScreen() {
             style={themeStyles.logo}
           />
           <Text style={themeStyles.brandText}>
-            <Text style={themeStyles.brandMan}>JUMUIYA</Text>
-            <Text style={themeStyles.brandPower}>CAPITAL</Text>
+            <Text style={themeStyles.brandMan}>MAN</Text>
+            <Text style={themeStyles.brandPower}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.replace('/(member)/dashboard')}>

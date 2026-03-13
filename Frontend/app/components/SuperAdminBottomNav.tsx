@@ -14,7 +14,7 @@ export default function SuperAdminBottomNav({ current }: Props) {
     { key: 'members', label: 'Members', icon: '👥', path: '/(superadmin)/member-management' },
     { key: 'finance', label: 'Finance', icon: '💰', path: '/(superadmin)/financial-management' },
     { key: 'documents', label: 'Documents', icon: '📁', path: '/(superadmin)/document-management' },
-    { key: 'meetings', label: 'Meetings', icon: '🗓️', path: '/(superadmin)/meeting-management' },
+    // { key: 'meetings', label: 'Meetings', icon: '🗓️', path: '/(superadmin)/meeting-management' },
   ];
 
   return (

@@ -204,8 +204,8 @@ export default function ContributionSummaryScreen() {
         <View style={styles.logoWrapper}>
           <Image source={require('../../../assets/images/logo.png')} style={styles.logo} />
           <Text style={styles.appName}>
-            <Text style={styles.black}>JUMUIYA</Text>
-            <Text style={styles.red}>CAPITAL</Text>
+            <Text style={styles.black}>MAN</Text>
+            <Text style={styles.red}>POWER</Text>
           </Text>
         </View>
         <TouchableOpacity onPress={() => router.push('/(superadmin)/dashboard')}>

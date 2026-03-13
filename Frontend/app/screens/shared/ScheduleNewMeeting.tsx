@@ -385,8 +385,8 @@ export default function ScheduleNewMeetingScreen() {
         <View style={styles.logoNameWrapper}>
           <Image source={require('../../../assets/images/logo.png')} style={styles.logo} />
           <View style={styles.textLogoContainer}>
-            <Text style={styles.titleBlack}>JUMUIYA</Text>
-            <Text style={styles.titleRed}>CAPITAL</Text>
+            <Text style={styles.titleBlack}>MAN</Text>
+            <Text style={styles.titleRed}>POWER</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => router.back()}>

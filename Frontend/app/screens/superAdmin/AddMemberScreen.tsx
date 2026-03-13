@@ -215,8 +215,8 @@ export default function AddMemberScreen(): React.JSX.Element {
             resizeMode="contain"
           />
           <View style={styles.logoTextContainer}>
-            <Text style={styles.titleBlack}>JUMUIYA</Text>
-            <Text style={styles.titleRed}>CAPITAL</Text>
+            <Text style={styles.titleBlack}>MAN</Text>
+            <Text style={styles.titleRed}>POWER</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => router.push('/(superadmin)/dashboard')}>

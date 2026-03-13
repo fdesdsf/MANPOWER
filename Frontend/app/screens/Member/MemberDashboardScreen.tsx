@@ -509,8 +509,8 @@ function MemberDashboardScreen() {
               style={styles.logo}
             />
             <View style={styles.appTitleContainer}>
-              <Text style={[styles.titleBlack, isDarkMode && styles.darkTitleBlack]}>JUMUIYA</Text>
-              <Text style={styles.titleGreen}>CAPITAL</Text>
+              <Text style={[styles.titleBlack, isDarkMode && styles.darkTitleBlack]}>MAN</Text>
+              <Text style={styles.titleGreen}>POWER</Text>
             </View>
           </View>
         </View>
