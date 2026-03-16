@@ -5,11 +5,12 @@ import {
   StyleSheet,
   SafeAreaView,
   TextInput,
-  Alert,
+  // Alert, // COMMENT OUT THIS IMPORT
   ScrollView,
   Image,
   TouchableOpacity,
   ActivityIndicator,
+  Platform, // ADD THIS
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
@@ -18,6 +19,20 @@ import axios from 'axios';
 import GroupAdminBottomNav from '../../components/GroupAdminBottomNav';
 
 const API_BASE_URL = 'http://192.168.0.101:8080/api';
+
+// ADD THIS HELPER FUNCTION at the top (after imports, before component)
+const showAlert = (title: string, message: string, onOk?: () => void) => {
+  console.log(`🔔 Alert: ${title} - ${message}`);
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+    if (onOk) onOk();
+  } else {
+    const Alert = require('react-native').Alert;
+    Alert.alert(title, message, [
+      { text: 'OK', onPress: onOk }
+    ]);
+  }
+};
 
 type Group = {
   id: string;
@@ -122,11 +137,11 @@ export default function RecordExpenseScreen(): React.JSX.Element {
             fetchGroupExpenses(storedGroupId)
           ]);
         } else {
-          Alert.alert('Error', 'User session is invalid. Please log in again.');
+          showAlert('Error', 'User session is invalid. Please log in again.');
         }
       } catch (err) {
         console.error('❌ Failed to load storage:', err);
-        Alert.alert('Error', 'Could not load user or group data.');
+        showAlert('Error', 'Could not load user or group data.');
       } finally {
         setLoading(false);
       }
@@ -145,7 +160,7 @@ export default function RecordExpenseScreen(): React.JSX.Element {
       setGroupData(response.data);
     } catch (err) {
       console.error('❌ Error fetching group:', err);
-      Alert.alert('Error', 'Could not fetch group details.');
+      showAlert('Error', 'Could not fetch group details.');
     }
   };
 
@@ -161,7 +176,7 @@ export default function RecordExpenseScreen(): React.JSX.Element {
       }
     } catch (err) {
       console.error('❌ Error fetching members:', err);
-      Alert.alert('Error', 'Could not fetch group members.');
+      showAlert('Error', 'Could not fetch group members.');
     }
   };
 
@@ -338,17 +353,17 @@ export default function RecordExpenseScreen(): React.JSX.Element {
 
   const validateForm = (): boolean => {
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      Alert.alert('Validation', 'Please enter a valid amount.');
+      showAlert('Validation', 'Please enter a valid amount.');
       return false;
     }
     
     if (!formData.description.trim()) {
-      Alert.alert('Validation', 'Please enter a description for the expense.');
+      showAlert('Validation', 'Please enter a description for the expense.');
       return false;
     }
 
     if (!formData.approvedBy) {
-      Alert.alert('Validation', 'Please select who approved this expense.');
+      showAlert('Validation', 'Please select who approved this expense.');
       return false;
     }
 
@@ -356,7 +371,7 @@ export default function RecordExpenseScreen(): React.JSX.Element {
     const expenseAmount = parseFloat(formData.amount);
     
     if (expenseAmount > groupBalance) {
-      Alert.alert(
+      showAlert(
         'Insufficient Funds', 
         `Expense amount (KES ${expenseAmount.toLocaleString()}) exceeds available balance (KES ${groupBalance.toLocaleString()}).`
       );
@@ -376,7 +391,7 @@ export default function RecordExpenseScreen(): React.JSX.Element {
       const approvedByMember = members.find(m => m.id === formData.approvedBy);
       
       if (!approvedByMember) {
-        Alert.alert('Error', 'Selected approver not found in group members.');
+        showAlert('Error', 'Selected approver not found in group members.');
         return;
       }
 
@@ -402,33 +417,44 @@ export default function RecordExpenseScreen(): React.JSX.Element {
 
       await axios.post(`${API_BASE_URL}/expenses`, payload);
 
-      Alert.alert(
+      showAlert(
         'Success', 
         `Expense of KES ${parseFloat(formData.amount).toLocaleString()} recorded successfully.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Reset form and refresh data
-              setFormData({
-                amount: '',
-                description: '',
-                dateIncurred: new Date().toISOString().split('T')[0],
-                approvedBy: adminId,
-              });
-              fetchGroupBalance(groupId);
-              fetchGroupExpenses(groupId);
-            }
-          }
-        ]
+        () => {
+          // Reset form and refresh data
+          setFormData({
+            amount: '',
+            description: '',
+            dateIncurred: new Date().toISOString().split('T')[0],
+            approvedBy: adminId,
+          });
+          fetchGroupBalance(groupId);
+          fetchGroupExpenses(groupId);
+        }
       );
 
     } catch (err: unknown) {
-      const errorMessage = axios.isAxiosError(err)
-        ? err.response?.data?.message || 'Server error.'
-        : 'Unexpected error occurred.';
-      console.error('❌ Expense submission error:', errorMessage);
-      Alert.alert('Error', errorMessage);
+      console.error('❌ Expense submission error:', err);
+      
+      let errorMessage = 'Failed to record expense.';
+      
+      if (axios.isAxiosError(err)) {
+        if (err.response) {
+          if (err.response.status === 500) {
+            errorMessage = err.response.data?.message || 'Server error. Please try again.';
+          } else if (err.response.status === 400) {
+            errorMessage = err.response.data?.message || 'Invalid data. Please check your inputs.';
+          } else {
+            errorMessage = err.response.data?.message || `Error: ${err.response.status}`;
+          }
+        } else if (err.request) {
+          errorMessage = 'No response from server. Check your network connection.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      showAlert('Error', errorMessage);
     } finally {
       setSubmitting(false);
     }

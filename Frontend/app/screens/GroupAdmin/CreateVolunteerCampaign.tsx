@@ -7,18 +7,34 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Image,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
+import { Ionicons } from '@expo/vector-icons';
 
 const BASE_URL = 'http://192.168.0.101:8080/api';
 
-interface Campaign {
+// Helper function for alerts
+const showAlert = (title: string, message: string, onOk?: () => void) => {
+  console.log(`🔔 Alert: ${title} - ${message}`);
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+    if (onOk) onOk();
+  } else {
+    const Alert = require('react-native').Alert;
+    Alert.alert(title, message, [
+      { text: 'OK', onPress: onOk }
+    ]);
+  }
+};
+
+// ========== INTERFACES ==========
+interface VolunteerCampaign {
   id: string;
   campaignName: string;
   description: string;
@@ -35,6 +51,33 @@ interface Campaign {
   daysRemaining: number;
   isOpen: boolean;
   isExpired: boolean;
+  contributions?: VolunteerContribution[];
+}
+
+interface VolunteerContribution {
+  id: string;
+  memberId?: string;
+  member?: { 
+    id: string; 
+    firstName: string; 
+    lastName: string;
+    email?: string;
+  };
+  amount: number;
+  description: string;
+  contributionDate: string;
+  status: string;
+  paymentMethod?: string;
+  createdOn: string;
+}
+
+interface MemberCache {
+  [key: string]: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
 }
 
 type FilterType = 'all' | 'active' | 'closed' | 'completed';
@@ -47,6 +90,7 @@ export default function VolunteerCampaignsScreen() {
   const [userId, setUserId] = useState('');
   const [groupName, setGroupName] = useState('');
   const [adminName, setAdminName] = useState('');
+  const [memberCache, setMemberCache] = useState<MemberCache>({});
   
   // Form fields for creating campaign
   const [campaignName, setCampaignName] = useState('');
@@ -58,8 +102,9 @@ export default function VolunteerCampaignsScreen() {
   );
 
   // Campaigns list
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [filteredCampaigns, setFilteredCampaigns] = useState<Campaign[]>([]);
+  const [campaigns, setCampaigns] = useState<VolunteerCampaign[]>([]);
+  const [filteredCampaigns, setFilteredCampaigns] = useState<VolunteerCampaign[]>([]);
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   
   // Filter states
   const [filterType, setFilterType] = useState<FilterType>('all');
@@ -87,6 +132,139 @@ export default function VolunteerCampaignsScreen() {
     (currentYear - 5 + i).toString()
   );
 
+  // ========== Helper function to get member name ==========
+  const getMemberName = async (memberId: string) => {
+    // Check cache first
+    if (memberCache[memberId]) {
+      return memberCache[memberId];
+    }
+
+    // If not in cache, try to fetch from API
+    try {
+      const response = await fetch(`${BASE_URL}/members/${memberId}`);
+      if (response.ok) {
+        const memberData = await response.json();
+        const member = {
+          id: memberData.id,
+          firstName: memberData.firstName || 'Unknown',
+          lastName: memberData.lastName || 'Member',
+        };
+        
+        // Update cache
+        const updatedCache = { ...memberCache, [memberId]: member };
+        setMemberCache(updatedCache);
+        await AsyncStorage.setItem('memberCache', JSON.stringify(updatedCache));
+        
+        return member;
+      } else {
+        const errorText = await response.text();
+        console.warn(`Failed to fetch member ${memberId}: ${response.status} - ${errorText}`);
+      }
+    } catch (error: any) {
+      console.error(`Error fetching member ${memberId}:`, error.message);
+    }
+
+    return null;
+  };
+
+  // ========== Fetch campaigns with contributions ==========
+  const fetchCampaignsWithContributions = async (gId: string) => {
+    try {
+      // 1. Fetch all campaigns for the group
+      const campaignsResponse = await fetch(`${BASE_URL}/volunteer-campaigns/group/${gId}`);
+      
+      if (!campaignsResponse.ok) {
+        const errorText = await campaignsResponse.text();
+        let errorMessage = 'Failed to fetch campaigns';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorText;
+        } catch {
+          errorMessage = errorText || `Server error: ${campaignsResponse.status}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const allCampaigns: VolunteerCampaign[] = await campaignsResponse.json();
+      
+      // 2. For each campaign, fetch its contributions
+      const campaignsWithContributions = await Promise.all(
+        allCampaigns.map(async (campaign) => {
+          try {
+            const contributionsResponse = await fetch(
+              `${BASE_URL}/volunteer-contributions/campaign/${campaign.id}`
+            );
+            
+            if (contributionsResponse.ok) {
+              const contributions = await contributionsResponse.json();
+              
+              // Enhance contributions with member names
+              const enhancedContributions = await Promise.all(
+                contributions.map(async (c: any) => {
+                  const member = await getMemberName(c.memberId);
+                  
+                  if (member) {
+                    return {
+                      ...c,
+                      member: {
+                        id: c.memberId,
+                        firstName: member.firstName,
+                        lastName: member.lastName,
+                      }
+                    };
+                  }
+                  
+                  return {
+                    ...c,
+                    member: {
+                      id: c.memberId,
+                      firstName: 'Unknown',
+                      lastName: 'Member',
+                    }
+                  };
+                })
+              );
+              
+              // Recalculate totals from contributions
+              const totalRaised = enhancedContributions.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+              const uniqueContributors = new Set(enhancedContributions.map((c: any) => c.memberId)).size;
+              
+              const progress = campaign.targetAmount && campaign.targetAmount > 0
+                ? (totalRaised / campaign.targetAmount) * 100
+                : 0;
+              
+              return { 
+                ...campaign, 
+                contributions: enhancedContributions,
+                raisedAmount: totalRaised,
+                contributorCount: uniqueContributors,
+                progress: progress
+              };
+            } else {
+              const errorText = await contributionsResponse.text();
+              console.warn(`Failed to fetch contributions for campaign ${campaign.id}: ${contributionsResponse.status} - ${errorText}`);
+            }
+          } catch (error: any) {
+            console.error(`Error fetching contributions for campaign ${campaign.id}:`, error.message);
+          }
+          return { ...campaign, contributions: [] };
+        })
+      );
+
+      // Sort by created date (newest first)
+      campaignsWithContributions.sort((a, b) => 
+        new Date(b.createdOn).getTime() - new Date(a.createdOn).getTime()
+      );
+
+      setCampaigns(campaignsWithContributions);
+      setFilteredCampaigns(campaignsWithContributions);
+      
+    } catch (error: any) {
+      console.error('Error fetching campaigns:', error);
+      showAlert('Error', error.message || 'Failed to load volunteer campaigns');
+    }
+  };
+
   useEffect(() => {
     loadUserData();
   }, []);
@@ -108,37 +286,27 @@ export default function VolunteerCampaignsScreen() {
       setGroupName(groupNameStored || '');
       setAdminName(`${firstName || ''} ${lastName || ''}`.trim());
       
-      if (group) {
-        await fetchCampaigns(group);
+      // Load member cache
+      const cacheStr = await AsyncStorage.getItem('memberCache');
+      if (cacheStr) {
+        setMemberCache(JSON.parse(cacheStr));
       }
-    } catch (error) {
+      
+      if (group) {
+        await fetchCampaignsWithContributions(group);
+      }
+    } catch (error: any) {
       console.error('Error loading user data:', error);
+      showAlert('Error', error.message || 'Failed to load user data.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchCampaigns = async (gId: string) => {
-    try {
-      const response = await fetch(`${BASE_URL}/volunteer-campaigns/group/${gId}`);
-      
-      if (response.ok) {
-        const data: Campaign[] = await response.json();
-        // Sort by created date (newest first)
-        data.sort((a, b) => new Date(b.createdOn).getTime() - new Date(a.createdOn).getTime());
-        setCampaigns(data);
-        setFilteredCampaigns(data);
-      }
-    } catch (error) {
-      console.error('Error fetching campaigns:', error);
-      Alert.alert('Error', 'Failed to load volunteer campaigns');
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     if (groupId) {
-      await fetchCampaigns(groupId);
+      await fetchCampaignsWithContributions(groupId);
     }
     setRefreshing(false);
   };
@@ -146,32 +314,32 @@ export default function VolunteerCampaignsScreen() {
   const handleCreateCampaign = async () => {
     // Validation
     if (!campaignName.trim()) {
-      Alert.alert('Validation', 'Campaign name is required.');
+      showAlert('Validation', 'Campaign name is required.');
       return;
     }
 
     if (!startDate) {
-      Alert.alert('Validation', 'Start date is required.');
+      showAlert('Validation', 'Start date is required.');
       return;
     }
 
     if (!endDate) {
-      Alert.alert('Validation', 'End date is required.');
+      showAlert('Validation', 'End date is required.');
       return;
     }
 
     if (startDate > endDate) {
-      Alert.alert('Validation', 'End date must be after start date.');
+      showAlert('Validation', 'End date must be after start date.');
       return;
     }
 
     if (targetAmount && parseFloat(targetAmount) <= 0) {
-      Alert.alert('Validation', 'Target amount must be greater than 0.');
+      showAlert('Validation', 'Target amount must be greater than 0.');
       return;
     }
 
     if (!groupId) {
-      Alert.alert('Error', 'Group information not found.');
+      showAlert('Error', 'Group information not found.');
       return;
     }
 
@@ -197,22 +365,30 @@ export default function VolunteerCampaignsScreen() {
       });
 
       if (response.ok) {
-        Alert.alert('Success', 'Campaign created successfully!');
-        // Reset form
-        setCampaignName('');
-        setDescription('');
-        setTargetAmount('');
-        setStartDate(new Date().toISOString().split('T')[0]);
-        setEndDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-        // Refresh list
-        await fetchCampaigns(groupId);
+        showAlert('Success', 'Campaign created successfully!', () => {
+          // Reset form
+          setCampaignName('');
+          setDescription('');
+          setTargetAmount('');
+          setStartDate(new Date().toISOString().split('T')[0]);
+          setEndDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+          // Refresh list
+          fetchCampaignsWithContributions(groupId);
+        });
       } else {
-        const error = await response.text();
-        throw new Error(error || 'Failed to create campaign');
+        const errorText = await response.text();
+        let errorMessage = 'Failed to create campaign';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorText;
+        } catch {
+          errorMessage = errorText || `Server error: ${response.status}`;
+        }
+        throw new Error(errorMessage);
       }
     } catch (error: any) {
       console.error('Create campaign error:', error);
-      Alert.alert('Error', error.message || 'Failed to create campaign');
+      showAlert('Error', error.message || 'Failed to create campaign');
     } finally {
       setSubmitting(false);
     }
@@ -295,8 +471,11 @@ export default function VolunteerCampaignsScreen() {
     }
   };
 
-  const getStatusText = (campaign: Campaign) => {
+  const getStatusText = (campaign: VolunteerCampaign) => {
     if (campaign.isExpired) return 'EXPIRED';
+    if (campaign.status === 'ACTIVE' && campaign.targetAmount && campaign.raisedAmount >= campaign.targetAmount) {
+      return 'TARGET REACHED';
+    }
     return campaign.status;
   };
 
@@ -306,6 +485,19 @@ export default function VolunteerCampaignsScreen() {
       month: 'short',
       year: 'numeric'
     });
+  };
+
+  const formatDateShort = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-KE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      });
+    } catch (error) {
+      return '-';
+    }
   };
 
   const calculateDays = () => {
@@ -319,10 +511,15 @@ export default function VolunteerCampaignsScreen() {
   const calculateStats = () => {
     const totalRaised = filteredCampaigns.reduce((sum, c) => sum + c.raisedAmount, 0);
     const activeCount = filteredCampaigns.filter(c => c.status === 'ACTIVE' && !c.isExpired).length;
-    return { totalRaised, activeCount };
+    const completedCount = filteredCampaigns.filter(c => c.status === 'COMPLETED').length;
+    return { totalRaised, activeCount, completedCount };
   };
 
   const stats = calculateStats();
+
+  const toggleCampaign = (campaignId: string) => {
+    setExpandedCampaignId(expandedCampaignId === campaignId ? null : campaignId);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -351,7 +548,7 @@ export default function VolunteerCampaignsScreen() {
         <Text style={styles.title}>Volunteer Campaigns</Text>
         <Text style={styles.subtitle}>{groupName}</Text>
 
-        {/* CREATE CAMPAIGN SECTION - Like Expense Form */}
+        {/* CREATE CAMPAIGN SECTION */}
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>Create New Campaign</Text>
           
@@ -432,14 +629,30 @@ export default function VolunteerCampaignsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* CAMPAIGN HISTORY SECTION - Like Expense History */}
+        {/* STATS SUMMARY CARDS */}
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{filteredCampaigns.length}</Text>
+            <Text style={styles.statLabel}>Total Campaigns</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.activeCount}</Text>
+            <Text style={styles.statLabel}>Active</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>KES {stats.totalRaised.toLocaleString()}</Text>
+            <Text style={styles.statLabel}>Total Raised</Text>
+          </View>
+        </View>
+
+        {/* CAMPAIGN HISTORY SECTION */}
         <View style={styles.historySection}>
           <View style={styles.historyHeader}>
             <Text style={styles.historyTitle}>Campaign History</Text>
             <Text style={styles.filterSummary}>{getFilterSummary()}</Text>
           </View>
 
-          {/* Filter Controls - Like Expense Screen */}
+          {/* Filter Controls */}
           <View style={styles.filterContainer}>
             <Text style={styles.filterLabel}>Quick Filters:</Text>
             <View style={styles.filterButtons}>
@@ -496,15 +709,6 @@ export default function VolunteerCampaignsScreen() {
                 <Text style={styles.resetButtonText}>Reset Filters</Text>
               </TouchableOpacity>
             )}
-
-            {/* Summary Stats */}
-            {filteredCampaigns.length > 0 && (
-              <View style={styles.statsSummary}>
-                <Text style={styles.statsText}>
-                  {filteredCampaigns.length} campaign(s) • KES {stats.totalRaised.toLocaleString()} raised
-                </Text>
-              </View>
-            )}
           </View>
 
           {/* Campaigns List */}
@@ -522,79 +726,158 @@ export default function VolunteerCampaignsScreen() {
             </View>
           ) : (
             filteredCampaigns.map((campaign) => (
-              <View key={campaign.id} style={styles.campaignRow}>
-                <View style={styles.campaignHeader}>
-                  <View style={styles.campaignTitleContainer}>
-                    <Text style={styles.campaignName}>{campaign.campaignName}</Text>
-                    <Text style={styles.campaignDate}>
-                      {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
-                    </Text>
-                  </View>
-                  <View style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(campaign.status, campaign.isExpired) + '20' }
-                  ]}>
-                    <Text style={[
-                      styles.statusText,
-                      { color: getStatusColor(campaign.status, campaign.isExpired) }
+              <View key={campaign.id} style={styles.campaignContainer}>
+                {/* Campaign Card */}
+                <TouchableOpacity
+                  style={styles.campaignCard}
+                  onPress={() => toggleCampaign(campaign.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.campaignHeader}>
+                    <View style={styles.campaignTitleContainer}>
+                      <Text style={styles.campaignName}>{campaign.campaignName}</Text>
+                      <Text style={styles.campaignDate}>
+                        {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: getStatusColor(campaign.status, campaign.isExpired) + '20' }
                     ]}>
-                      {getStatusText(campaign)}
-                    </Text>
+                      <Text style={[
+                        styles.statusText,
+                        { color: getStatusColor(campaign.status, campaign.isExpired) }
+                      ]}>
+                        {getStatusText(campaign)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
 
-                <Text style={styles.campaignDescription} numberOfLines={2}>
-                  {campaign.description}
-                </Text>
+                  <Text style={styles.campaignDescription} numberOfLines={2}>
+                    {campaign.description}
+                  </Text>
 
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressHeader}>
-                    <Text style={styles.progressLabel}>Progress</Text>
-                    <Text style={styles.progressPercentage}>
-                      {campaign.progress.toFixed(1)}%
-                    </Text>
+                  <View style={styles.progressContainer}>
+                    <View style={styles.progressHeader}>
+                      <Text style={styles.progressLabel}>Progress</Text>
+                      <Text style={styles.progressPercentage}>
+                        {campaign.progress < 0.01 
+                          ? '< 0.01%' 
+                          : campaign.progress < 0.1 
+                            ? campaign.progress.toFixed(2) + '%' 
+                            : campaign.progress.toFixed(1) + '%'}
+                      </Text>
+                    </View>
+                    <View style={styles.progressBarContainer}>
+                      <View 
+                        style={[
+                          styles.progressBar,
+                          { 
+                            width: `${Math.min(campaign.progress, 100)}%`,
+                            backgroundColor: campaign.progress >= 100 ? '#4CAF50' : '#2196F3'
+                          }
+                        ]} 
+                      />
+                    </View>
+                    <View style={styles.amountRow}>
+                      <Text style={styles.raisedAmount}>
+                        KES {campaign.raisedAmount.toLocaleString()}
+                      </Text>
+                      <Text style={styles.targetAmount}>
+                        {campaign.targetAmount 
+                          ? `target: KES ${campaign.targetAmount.toLocaleString()}`
+                          : 'no target'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.progressBarContainer}>
-                    <View 
-                      style={[
-                        styles.progressBar,
-                        { 
-                          width: `${Math.min(campaign.progress, 100)}%`,
-                          backgroundColor: campaign.progress >= 100 ? '#4CAF50' : '#2196F3'
-                        }
-                      ]} 
-                    />
-                  </View>
-                  <View style={styles.amountRow}>
-                    <Text style={styles.raisedAmount}>
-                      KES {campaign.raisedAmount.toLocaleString()}
-                    </Text>
-                    <Text style={styles.targetAmount}>
-                      {campaign.targetAmount 
-                        ? `target: KES ${campaign.targetAmount.toLocaleString()}`
-                        : 'no target'}
-                    </Text>
-                  </View>
-                </View>
 
-                <View style={styles.campaignFooter}>
-                  <View style={styles.footerItem}>
-                    <Text style={styles.footerIcon}>👥</Text>
-                    <Text style={styles.footerText}>
-                      {campaign.contributorCount} contributor(s)
-                    </Text>
+                  <View style={styles.campaignFooter}>
+                    <View style={styles.footerItem}>
+                      <Ionicons name="people-outline" size={14} color="#4CAF50" />
+                      <Text style={styles.footerText}>
+                        {campaign.contributorCount} contributor(s)
+                      </Text>
+                    </View>
+                    <View style={styles.footerDivider} />
+                    <View style={styles.footerItem}>
+                      <Ionicons name="time-outline" size={14} color="#FF9800" />
+                      <Text style={styles.footerText}>
+                        {campaign.isExpired 
+                          ? 'Expired' 
+                          : campaign.status === 'ACTIVE'
+                            ? `${campaign.daysRemaining} days left`
+                            : 'Closed'}
+                      </Text>
+                    </View>
+                    <View style={styles.footerDivider} />
+                    <View style={styles.footerItem}>
+                      <Ionicons 
+                        name={expandedCampaignId === campaign.id ? "chevron-up" : "chevron-down"} 
+                        size={16} 
+                        color="#4CAF50" 
+                      />
+                      <Text style={styles.footerText}>
+                        {expandedCampaignId === campaign.id ? 'Hide' : 'View'} contributions
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.footerDivider} />
-                  <View style={styles.footerItem}>
-                    <Text style={styles.footerIcon}>👤</Text>
-                    <Text style={styles.footerText}>
-                      {campaign.createdByName?.split(' ')[0] || 'Admin'}
-                    </Text>
+                </TouchableOpacity>
+
+                {/* Expanded Contributions Section */}
+                {expandedCampaignId === campaign.id && (
+                  <View style={styles.contributionsContainer}>
+                    <View style={styles.contributionsHeader}>
+                      <Text style={styles.contributionsTitle}>
+                        Contributions ({campaign.contributions?.length || 0})
+                      </Text>
+                      <Text style={styles.contributionsTotal}>
+                        Total: KES {campaign.contributions?.reduce((sum, c) => sum + c.amount, 0).toLocaleString() || 0}
+                      </Text>
+                    </View>
+
+                    {!campaign.contributions || campaign.contributions.length === 0 ? (
+                      <Text style={styles.noContributionsText}>
+                        No contributions yet
+                      </Text>
+                    ) : (
+                      campaign.contributions.map((contribution, index) => (
+                        <View key={contribution.id || index} style={styles.contributionRow}>
+                          <View style={styles.contributionInfo}>
+                            <Text style={styles.contributionMember}>
+                              {contribution.member?.firstName} {contribution.member?.lastName}
+                            </Text>
+                            <Text style={styles.contributionDate}>
+                              {formatDateShort(contribution.contributionDate || contribution.createdOn)}
+                            </Text>
+                          </View>
+                          <View style={styles.contributionAmount}>
+                            <Text style={styles.contributionAmountText}>
+                              KES {contribution.amount.toLocaleString()}
+                            </Text>
+                            {contribution.description && (
+                              <Text style={styles.contributionDesc} numberOfLines={1}>
+                                {contribution.description}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      ))
+                    )}
                   </View>
-                </View>
+                )}
               </View>
             ))
           )}
+        </View>
+
+        {/* Info Box */}
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={16} color="#4CAF50" />
+          <Text style={styles.infoText}>
+            • Tap on a campaign to view individual contributions{'\n'}
+            • Active campaigns are open for contributions{'\n'}
+            • Admin can monitor all member contributions
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -650,7 +933,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     marginTop: 4,
   },
-  // Form Styles - EXACT from Expense Screen
+  // Form Styles
   formCard: {
     backgroundColor: '#fff',
     padding: 20,
@@ -723,7 +1006,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', 
     fontSize: 16,
   },
-  // History Section - EXACT from Expense Screen
+  // Stats Grid
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#666',
+    textAlign: 'center',
+  },
+  // History Section
   historySection: {
     backgroundColor: '#fff',
     padding: 15,
@@ -750,7 +1063,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontStyle: 'italic',
   },
-  // Filter Styles - EXACT from Expense Screen
+  // Filter Styles
   filterContainer: {
     backgroundColor: '#F8F9FA',
     padding: 15,
@@ -822,18 +1135,6 @@ const styles = StyleSheet.create({
     color: '#F44336',
     fontWeight: '600',
   },
-  statsSummary: {
-    marginTop: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    alignItems: 'center',
-  },
-  statsText: {
-    fontSize: 13,
-    color: '#666',
-    fontWeight: '500',
-  },
   loader: {
     marginVertical: 20,
   },
@@ -855,12 +1156,14 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     fontWeight: '600',
   },
-  // Campaign Row Styles
-  campaignRow: {
+  // Campaign Container
+  campaignContainer: {
+    marginBottom: 16,
+  },
+  campaignCard: {
     backgroundColor: '#F5F5F5',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 12,
   },
   campaignHeader: {
     flexDirection: 'row',
@@ -941,7 +1244,7 @@ const styles = StyleSheet.create({
   },
   campaignFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
@@ -949,6 +1252,7 @@ const styles = StyleSheet.create({
   footerItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   footerIcon: {
     fontSize: 12,
@@ -957,11 +1261,96 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 11,
     color: '#666',
+    marginLeft: 4,
   },
   footerDivider: {
     width: 1,
     height: '100%',
     backgroundColor: '#E0E0E0',
     marginHorizontal: 8,
+  },
+  // Contributions Container
+  contributionsContainer: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    marginHorizontal: 8,
+  },
+  contributionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  contributionsTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  contributionsTotal: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+  },
+  noContributionsText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    paddingVertical: 12,
+    fontStyle: 'italic',
+  },
+  contributionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  contributionInfo: {
+    flex: 1,
+  },
+  contributionMember: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 2,
+  },
+  contributionDate: {
+    fontSize: 10,
+    color: '#666',
+  },
+  contributionAmount: {
+    alignItems: 'flex-end',
+  },
+  contributionAmountText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+  },
+  contributionDesc: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 2,
+  },
+  // Info Box
+  infoBox: {
+    flexDirection: 'row',
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 20,
+    marginBottom: 16,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#2E7D32',
+    lineHeight: 16,
+    marginLeft: 8,
   },
 });

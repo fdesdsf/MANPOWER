@@ -5,10 +5,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
+  // Alert, // COMMENT OUT THIS LINE
   View,
   Image,
   ScrollView,
+  Platform, // ADD THIS
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation } from '@react-navigation/native';
@@ -18,7 +19,22 @@ import { AuthStackParamList } from '../../navigation/AuthNavigator';
 
 type RegisterScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Register'>;
 
-const API_BASE_URL = 'http://192.168.0.101:8080/api'; // Update to your server
+const API_BASE_URL = 'http://192.168.0.101:8080/api';
+
+// ADD THIS HELPER FUNCTION at the top of the file (outside component)
+const showAlert = (title: string, message: string, onOk?: () => void) => {
+  if (Platform.OS === 'web') {
+    // For web, use browser's alert/confirm
+    window.alert(`${title}\n${message}`);
+    if (onOk) onOk();
+  } else {
+    // For native, use React Native's Alert
+    const Alert = require('react-native').Alert;
+    Alert.alert(title, message, [
+      { text: 'OK', onPress: onOk }
+    ]);
+  }
+};
 
 function RegisterScreen() {
   const navigation = useNavigation<RegisterScreenNavigationProp>();
@@ -40,7 +56,7 @@ function RegisterScreen() {
         .then((res) => setAvailableGroups(res.data))
         .catch((err) => {
           console.error(err);
-          Alert.alert('Error', 'Failed to fetch groups.');
+          showAlert('Error', 'Failed to fetch groups.');
         });
     }
   }, [role]);
@@ -52,7 +68,7 @@ function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!firstName || !lastName || !email || !phoneNumber || !password) {
-      Alert.alert('Error', 'Please fill all personal fields.');
+      showAlert('Error', 'Please fill all personal fields.');
       return;
     }
 
@@ -62,7 +78,7 @@ function RegisterScreen() {
 
       if (role === 'GroupAdmin') {
         if (!groupName) {
-          Alert.alert('Error', 'Group name is required for Group Admin.');
+          showAlert('Error', 'Group name is required for Group Admin.');
           return;
         }
 
@@ -81,13 +97,13 @@ function RegisterScreen() {
           createdOn: new Date().toISOString(),
           modifiedOn: new Date().toISOString(),
           mansoftTenantId: 'tenant-001',
-          group: null, // Admin isn't in any group yet
+          group: null,
         };
 
         const memberRes = await axios.post(`${API_BASE_URL}/members`, adminPayload);
         groupAdminId = memberRes.data.id;
 
-        // Step 2: Create the group using that GroupAdmin's ID
+        // Step 2: Create the group
         const groupPayload = {
           groupName: groupName,
           description: `Group created by: Name: ${firstName} ${lastName} Email: ${email}`,
@@ -104,14 +120,15 @@ function RegisterScreen() {
         const groupRes = await axios.post(`${API_BASE_URL}/groups`, groupPayload);
         groupId = groupRes.data.id;
 
-        Alert.alert('Success', 'Group and account created successfully.');
-        navigation.navigate('Login', { username: email, password });
+        showAlert('Success', 'Group and account created successfully.', () => {
+          navigation.navigate('Login', { username: email, password });
+        });
         return;
       }
 
       if (role === 'Member') {
         if (!selectedGroupId) {
-          Alert.alert('Error', 'Please select a group.');
+          showAlert('Error', 'Please select a group.');
           return;
         }
         groupId = selectedGroupId;
@@ -137,12 +154,46 @@ function RegisterScreen() {
         };
 
         await axios.post(`${API_BASE_URL}/members`, memberPayload);
-        Alert.alert('Success', 'Registration successful.');
-        navigation.navigate('Login', { username: email, password });
+        showAlert('Success', 'Registration successful.', () => {
+          navigation.navigate('Login', { username: email, password });
+        });
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Registration failed.');
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      
+      // FIXED: Extract the actual error message from the backend
+      let errorMessage = 'Registration failed.';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        console.log('Error response data:', error.response.data);
+        console.log('Error response status:', error.response.status);
+        
+        // Check for duplicate email error (SQL error 1062)
+        if (error.response.status === 500) {
+          // Check if it's a duplicate email error
+          if (error.response.data?.message?.includes('Duplicate entry') || 
+              error.response.data?.message?.includes('UK_9d30a9u1qpg8eou0otgkwrp5d')) {
+            errorMessage = 'This email is already registered. Please use a different email.';
+          } else {
+            errorMessage = error.response.data?.message || 'Server error. Please try again.';
+          }
+        } else if (error.response.status === 400) {
+          errorMessage = error.response.data?.message || 'Invalid data. Please check your inputs.';
+        } else if (error.response.status === 409) {
+          errorMessage = 'Email already exists. Please use a different email.';
+        } else {
+          errorMessage = error.response.data?.message || `Error: ${error.response.status}`;
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        errorMessage = 'No response from server. Check your network connection.';
+      } else {
+        // Something happened in setting up the request
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
+      showAlert('Registration Error', errorMessage);
     }
   };
 
@@ -160,23 +211,65 @@ function RegisterScreen() {
         </View>
         <Text style={styles.subText}>Create your account below</Text>
 
-        <TextInput style={styles.input} placeholder="First Name" value={firstName} onChangeText={setFirstName} />
-        <TextInput style={styles.input} placeholder="Last Name" value={lastName} onChangeText={setLastName} />
-        <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-        <TextInput style={styles.input} placeholder="Phone Number" value={phoneNumber} onChangeText={setPhoneNumber} keyboardType="phone-pad" />
-        <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
+        <TextInput 
+          style={styles.input} 
+          placeholder="First Name" 
+          value={firstName} 
+          onChangeText={setFirstName} 
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Last Name" 
+          value={lastName} 
+          onChangeText={setLastName} 
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Email" 
+          value={email} 
+          onChangeText={setEmail} 
+          keyboardType="email-address" 
+          autoCapitalize="none"
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Phone Number" 
+          value={phoneNumber} 
+          onChangeText={setPhoneNumber} 
+          keyboardType="phone-pad" 
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Password" 
+          value={password} 
+          onChangeText={setPassword} 
+          secureTextEntry 
+        />
 
-        <Picker selectedValue={role} onValueChange={(value) => setRole(value)} style={styles.picker}>
+        <Picker 
+          selectedValue={role} 
+          onValueChange={(value) => setRole(value)} 
+          style={styles.picker}
+        >
           <Picker.Item label="Member" value="Member" />
           <Picker.Item label="Group Admin" value="GroupAdmin" />
         </Picker>
 
         {role === 'GroupAdmin' && (
-          <TextInput style={styles.input} placeholder="New Group Name" value={groupName} onChangeText={setGroupName} />
+          <TextInput 
+            style={styles.input} 
+            placeholder="New Group Name" 
+            value={groupName} 
+            onChangeText={setGroupName} 
+          />
         )}
 
         {role === 'Member' && (
-          <Picker selectedValue={selectedGroupId} onValueChange={(value) => setSelectedGroupId(value)} style={styles.picker}>
+          <Picker 
+            selectedValue={selectedGroupId} 
+            onValueChange={(value) => setSelectedGroupId(value)} 
+            style={styles.picker}
+          >
             <Picker.Item label="Select a Group" value="" />
             {availableGroups.map((group) => (
               <Picker.Item key={group.id} label={group.groupName} value={group.id} />
@@ -197,6 +290,7 @@ function RegisterScreen() {
   );
 }
 
+// Styles remain exactly the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,

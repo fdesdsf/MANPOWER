@@ -8,31 +8,29 @@ import {
   View,
   Image,
   Modal,
-  ActivityIndicator, // Import ActivityIndicator for loading state
-  Alert, // <-- IMPORTED: Needed for showing the inactive alert
+  ActivityIndicator,
+  // Alert, // COMMENT OUT this import
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
-// Define your backend API base URL
 const BASE_URL = 'http://192.168.0.101:8080/api';
 
-// Define the structure of the successful login response from your backend
 interface LoginResponse {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
-  role: string; // This will be 'SuperAdmin', 'GroupAdmin', 'Member' as strings
-  status: string; // Crucial: Add 'status' to the interface
+  role: string;
+  status: string;
   mansoftTenantId: string;
-  groupId?: string; // Add groupId as an optional property
-  phoneNumber?: string; // NEW: Add phoneNumber
-  joinDate?: string;    // NEW: Add joinDate (assuming YYYY-MM-DD string from backend)
-  createdBy?: string;   // NEW: Add createdBy
-  modifiedBy?: string;  // NEW: Add modifiedBy
-  createdOn?: string;   // NEW: Add createdOn (assuming ISO string from backend)
-  modifiedOn?: string;  // NEW: Add modifiedOn (assuming ISO string from backend)
+  groupId?: string;
+  phoneNumber?: string;
+  joinDate?: string;
+  createdBy?: string;
+  modifiedBy?: string;
+  createdOn?: string;
+  modifiedOn?: string;
 }
 
 export default function LoginScreen() {
@@ -62,36 +60,36 @@ export default function LoginScreen() {
         const data: LoginResponse = await response.json();
         console.log('Login successful!', data);
 
-        // --- IMPORTANT: Check user status BEFORE storing data or navigating ---
+        // --- FIXED: Check user status BEFORE storing data or navigating ---
         if (data.status === 'Inactive' || data.status === 'Terminated') {
-          Alert.alert( // Using React Native Alert for simplicity here
-            'Access Restricted',
-            'Your account is awaiting approval by the group administrator. Please contact your group admin for assistance.',
-            [{ text: 'OK' }]
+          console.log('Inactive user detected, showing alert...');
+          
+          // Use the existing modal instead of Alert.alert
+          showModal(
+            'Your account is awaiting approval by the group administrator. Please contact your group admin for assistance.'
           );
-          // Do NOT store any user data in AsyncStorage for inactive users
+          
+          // Do NOT store any user data
           // Do NOT navigate
-          setLoading(false); // End loading state
-          return; // Stop the function execution here
+          setLoading(false);
+          return; // Stop here
         }
-        // --- End of inactive status check ---
+        // --- End of fix ---
 
         // If status is NOT 'Inactive', proceed to store data and navigate
-        await AsyncStorage.setItem('userToken', data.id); // Assuming 'id' is used as the token
+        await AsyncStorage.setItem('userToken', data.id);
         await AsyncStorage.setItem('userId', data.id);
         await AsyncStorage.setItem('userEmail', data.email);
         await AsyncStorage.setItem('userFirstName', data.firstName);
         await AsyncStorage.setItem('userLastName', data.lastName);
         await AsyncStorage.setItem('userRole', data.role);
-        await AsyncStorage.setItem('userStatus', data.status); // Store the active status
+        await AsyncStorage.setItem('userStatus', data.status);
         await AsyncStorage.setItem('userTenantId', data.mansoftTenantId);
 
-        // Store additional profile data if it exists in the login response
         if (data.groupId) {
           await AsyncStorage.setItem('userGroupId', data.groupId);
         } else {
-          console.warn('Login response did not contain groupId for the user.');
-          await AsyncStorage.removeItem('userGroupId'); // Ensure no stale groupId is present
+          await AsyncStorage.removeItem('userGroupId');
         }
         if (data.phoneNumber) {
           await AsyncStorage.setItem('userPhoneNumber', data.phoneNumber);
@@ -124,8 +122,7 @@ export default function LoginScreen() {
           await AsyncStorage.removeItem('userModifiedOn');
         }
 
-        // Navigate based on the role received from the backend
-        // Using router.replace to prevent going back to login screen
+        // Navigate based on role
         switch (data.role) {
           case 'SuperAdmin':
             router.replace('/(superadmin)/dashboard');
@@ -134,7 +131,7 @@ export default function LoginScreen() {
             router.replace('/(groupadmin)/dashboard');
             break;
           case 'Member':
-          default: // Default to member if role is unexpected or not explicitly listed
+          default:
             router.replace('/(member)/dashboard');
         }
       } else {
@@ -147,22 +144,20 @@ export default function LoginScreen() {
         } else if (response.status === 401) {
           errorMessage = 'Invalid email or password.';
         } else {
-          // Attempt to parse JSON error message if available
           try {
             const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.message || errorMessage;
           } catch (e) {
-            // Fallback to generic message if not JSON
             errorMessage = `Server error: ${response.status} - ${errorText || 'Unknown error'}`;
           }
         }
-        showModal(errorMessage); // Show modal for login failures
+        showModal(errorMessage);
       }
     } catch (error) {
       console.error('Network error during login:', error);
       showModal('Could not connect to the server. Please check your network connection.');
     } finally {
-      setLoading(false); // Always set loading to false when done
+      setLoading(false);
     }
   };
 
@@ -200,7 +195,6 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Links */}
         <View style={styles.linksContainer}>
           <TouchableOpacity onPress={() => router.push('/forgotpassword')}>
             <Text style={styles.link}>Forgot Password?</Text>
@@ -210,12 +204,23 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Modal for general messages (not specifically for inactive status, used for other errors) */}
-        <Modal transparent visible={modalVisible} animationType="fade">
+        {/* Single modal for ALL messages */}
+        <Modal 
+          transparent 
+          visible={modalVisible} 
+          animationType="fade"
+          onRequestClose={() => setModalVisible(false)}
+        >
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <Text style={styles.modalText}>{modalMessage}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalButton}>
+              <TouchableOpacity 
+                onPress={() => {
+                  console.log('Modal OK pressed');
+                  setModalVisible(false);
+                }} 
+                style={styles.modalButton}
+              >
                 <Text style={{ color: 'white' }}>OK</Text>
               </TouchableOpacity>
             </View>
@@ -223,7 +228,6 @@ export default function LoginScreen() {
         </Modal>
       </View>
 
-      {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>
           Powered by: <Text style={styles.footerBrand}>MANSOFT</Text>
@@ -234,6 +238,7 @@ export default function LoginScreen() {
   );
 }
 
+// Styles remain exactly the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,

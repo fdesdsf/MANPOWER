@@ -1,14 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  Alert, ScrollView, ActivityIndicator, SafeAreaView, Image
+  // Alert, // COMMENT OUT THIS IMPORT
+  ScrollView, ActivityIndicator, SafeAreaView, Image, Platform // ADD Platform
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
-import GroupAdminBottomNav from '../../components/GroupAdminBottomNav'; // Assuming this path is correct
+import GroupAdminBottomNav from '../../components/GroupAdminBottomNav';
 
-const BASE_URL = 'http://192.168.0.101:8080/api'; // Update to your backend IP
+const BASE_URL = 'http://192.168.0.101:8080/api';
+
+// ADD THIS HELPER FUNCTION at the top (after imports, before component)
+const showAlert = (title: string, message: string, onOk?: () => void) => {
+  console.log(`🔔 Alert: ${title} - ${message}`);
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+    if (onOk) onOk();
+  } else {
+    const Alert = require('react-native').Alert;
+    Alert.alert(title, message, [
+      { text: 'OK', onPress: onOk }
+    ]);
+  }
+};
 
 const GroupAdminNotificationScreen = () => {
   const router = useRouter();
@@ -28,14 +43,15 @@ const GroupAdminNotificationScreen = () => {
         const mansoftTenantId = await AsyncStorage.getItem('userTenantId');
 
         if (!id || !email || !groupId || !mansoftTenantId) {
-          Alert.alert('Error', 'Missing user data. Please log in again.');
-          router.replace('/(auth)/index'); // Redirect to login if user data is missing
+          showAlert('Error', 'Missing user data. Please log in again.', () => {
+            router.replace('/(auth)/index'); // Redirect to login if user data is missing
+          });
           return;
         }
 
         setUser({ id, email, groupId, mansoftTenantId });
       } catch (error) {
-        Alert.alert('Error', 'Failed to load user info.');
+        showAlert('Error', 'Failed to load user info.');
       }
     };
 
@@ -44,12 +60,12 @@ const GroupAdminNotificationScreen = () => {
 
   const handleSend = async () => {
     if (!type || !messageContent.trim() || !channel) {
-      Alert.alert('Validation', 'All fields are required.');
+      showAlert('Validation', 'All fields are required.');
       return;
     }
 
     if (!user) {
-      Alert.alert('Error', 'User info not loaded.');
+      showAlert('Error', 'User info not loaded.');
       return;
     }
 
@@ -85,16 +101,18 @@ const GroupAdminNotificationScreen = () => {
         }
       );
 
-      Alert.alert('Success ✅', response.data || 'Notification sent');
-      setType('');
-      setMessageContent('');
-      setChannel('');
+      showAlert('Success ✅', response.data || 'Notification sent', () => {
+        setType('');
+        setMessageContent('');
+        setChannel('');
+      });
+      
     } catch (error: any) {
       const msg =
         error.response?.data ||
         error.message ||
         'Failed to send notification.';
-      Alert.alert('Error ❌', msg.toString());
+      showAlert('Error ❌', msg.toString());
     } finally {
       setLoading(false);
     }
