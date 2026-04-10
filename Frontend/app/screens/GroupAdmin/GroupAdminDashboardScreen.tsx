@@ -260,6 +260,7 @@ export default function GroupDashboardScreen() {
     { name: 'Record Contribution', icon: '💰', route: '/(groupadmin)/record-contributions', color: '#4CAF50' },
     { name: 'Manage Groups', icon: '🏢', route: '/(groupadmin)/manage-groups', color: '#2196F3' },
     { name: 'View Members', icon: '👥', route: '/(groupadmin)/group-members', color: '#FF9800' },
+    { name: 'Contribution Report', icon: '🥧', route: '/(superadmin)/contribution-report', color: '#4CAF50' },
     { name: 'Send Notification', icon: '🔔', route: '/(groupadmin)/notifications', color: '#9C27B0' },
     { name: 'Loan Management', icon: '📝', route: '/(groupadmin)/loan-management', color: '#F44336' },
     { name: 'Churn Analysis', icon: '📊', route: '/(groupadmin)/churn-analysis', color: '#9C27B0' },
